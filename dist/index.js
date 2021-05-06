@@ -29958,7 +29958,10 @@ async function getReviewers(username) {
   const config = await fetchAndParseReviewers();
 
   // 先指定 mentor
-  reviewers.push(config.mentors[username]);
+  const mentor = config.mentors[username];
+  if (mentor) {
+    reviewers.push(mentor);
+  }
 
   // 再從同專案團隊抽 1 人
   const belongingTeamMembers = Object.values(config.teams)
