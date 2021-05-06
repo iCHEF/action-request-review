@@ -5,5 +5,9 @@
   "repository": "git@github.com:iCHEF/action_request_review.git",
   "author": "iCHEF FE team <feteam@ichef.com.tw>",
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "yaml": "^1.10.2"
+  }
 }
