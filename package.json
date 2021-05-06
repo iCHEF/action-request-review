@@ -1,8 +1,8 @@
 {
-  "name": "action_request_review",
+  "name": "action-request-review",
   "version": "1.0.0",
   "main": "index.js",
-  "repository": "git@github.com:iCHEF/action_request_review.git",
+  "repository": "git@github.com:iCHEF/action-request-review.git",
   "author": "iCHEF FE team <feteam@ichef.com.tw>",
   "license": "UNLICENSED",
   "private": true,
