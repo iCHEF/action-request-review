@@ -52,6 +52,7 @@ function randomPick(pickCount, candidates = []) {
 async function getReviewers(username) {
   const reviewers = [];
   const config = await fetchAndParseReviewers();
+  const targetCount = core.getInput('count');
 
   const mentor = config.mentors[username];
 
@@ -63,24 +64,26 @@ async function getReviewers(username) {
     core.info(`No mentor found.`);
   }
 
-  // 再從同專案團隊抽 1 人
+  // 再從同專案團隊優先抽滿
   const belongingTeamMembers = Object.values(config.teams)
     .find(teamMembers => teamMembers.includes(username))
     .filter(member => member !== username);
 
-  const teamReviewers = randomPick(1, belongingTeamMembers);
+  const remainingCount = targetCount - reviewers.length;
+  const teamReviewers = randomPick(remainingCount, belongingTeamMembers);
   reviewers.push(...teamReviewers);
 
   core.info(`Requesting team members: ${teamReviewers}`);
 
-  // 不夠的話從 mentorship group 抽 1 人
+  // 不夠的話從 mentorship group 抽到滿
   if (reviewers.length < 2) {
     const mentorshipGroupMembers = config.mentorshipGroups
       .find(group => group.includes(username))
       .filter(member => member !== username);
 
     const candidates = _.difference(mentorshipGroupMembers, reviewers);
-    const groupReviewers = randomPick(1, candidates);
+    const remainingCount = targetCount - reviewers.length;
+    const groupReviewers = randomPick(remainingCount, candidates);
 
     reviewers.push(...groupReviewers);
 
