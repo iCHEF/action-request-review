@@ -11,6 +11,8 @@
     "clean:build": "rm -rf ./dist"
   },
   "dependencies": {
+    "@actions/core": "^1.2.7",
+    "@actions/github": "^4.0.0",
     "lodash": "^4.17.21",
     "yaml": "^1.10.2"
   },
