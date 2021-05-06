@@ -1,0 +1,12 @@
+name: Auto request review
+description: Automatically request reviewer from teams and mentorship groups
+inputs:
+  token:
+    required: true
+    description: GitHub token
+  config_gist_id:
+    required: true
+    description: gist id to config.yml
+runs:
+  using: node12
+  main: dist/index.js
