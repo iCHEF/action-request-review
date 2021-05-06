@@ -53,10 +53,14 @@ async function getReviewers(username) {
   const reviewers = [];
   const config = await fetchAndParseReviewers();
 
-  // 先指定 mentor
   const mentor = config.mentors[username];
+
+  // 先抽 mentor
   if (mentor) {
+    core.info(`Requesting mentor: ${mentor}`);
     reviewers.push(mentor);
+  } else {
+    core.info(`No mentor found.`);
   }
 
   // 再從同專案團隊抽 1 人
@@ -64,7 +68,10 @@ async function getReviewers(username) {
     .find(teamMembers => teamMembers.includes(username))
     .filter(member => member !== username);
 
-  reviewers.push(...randomPick(1, belongingTeamMembers));
+  const teamReviewers = randomPick(1, belongingTeamMembers);
+  reviewers.push(...teamReviewers);
+
+  core.info(`Requesting team members: ${teamReviewers}`);
 
   // 不夠的話從 mentorship group 抽 1 人
   if (reviewers.length < 2) {
@@ -73,7 +80,11 @@ async function getReviewers(username) {
       .filter(member => member !== username);
 
     const candidates = _.difference(mentorshipGroupMembers, reviewers);
-    reviewers.push(...randomPick(1, candidates));
+    const groupReviewers = randomPick(1, candidates);
+
+    reviewers.push(...groupReviewers);
+
+    core.info(`Requesting extra reviewers: ${groupReviewers}`);
   }
 
   return reviewers;
@@ -86,7 +97,7 @@ async function run() {
     const author = context.payload.pull_request.user.login;
     const reviewers = await getReviewers(author);
 
-    core.info(`Requesting reviews from: ${reviewers}`);
+    core.info(`Requested reviewers: ${reviewers}`);
 
     await octokit.pulls.requestReviewers({
       owner: context.repo.owner,
