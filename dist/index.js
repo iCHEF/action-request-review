@@ -29971,7 +29971,7 @@ async function getReviewers(username) {
   // 再從同專案團隊優先抽滿
   const belongingTeamMembers = Object.values(config.teams)
     .find(teamMembers => teamMembers.includes(username))
-    .filter(member => member !== username);
+    .filter(member => member !== username && member!== mentor);
 
   const remainingCount = targetCount - reviewers.length;
   const teamReviewers = randomPick(remainingCount, belongingTeamMembers);
