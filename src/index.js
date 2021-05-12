@@ -69,8 +69,9 @@ async function getReviewers(username) {
     .find(teamMembers => teamMembers.includes(username))
     .filter(member => member !== username);
 
+  const candidatesOfTeam = _.difference(belongingTeamMembers, mentor);
   const remainingCount = targetCount - reviewers.length;
-  const teamReviewers = randomPick(remainingCount, belongingTeamMembers);
+  const teamReviewers = randomPick(remainingCount, candidatesOfTeam);
   reviewers.push(...teamReviewers);
 
   core.info(`Requesting team members: ${teamReviewers}`);
