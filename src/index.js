@@ -67,14 +67,15 @@ async function getReviewers(username) {
   // 再從同專案團隊優先抽滿
   const belongingTeamMembers = Object.values(config.teams)
     .find(teamMembers => teamMembers.includes(username))
-    .filter(member => member !== username);
+    .filter(member => member !== username && member !== mentor);
 
-  const candidatesOfTeam = _.difference(belongingTeamMembers, mentor);
+  const a = typeof memtor;
+  core.info(`type of ${a}`);
   const remainingCount = targetCount - reviewers.length;
-  const teamReviewers = randomPick(remainingCount, candidatesOfTeam);
+  const teamReviewers = randomPick(remainingCount, belongingTeamMembers);
   reviewers.push(...teamReviewers);
 
-  core.info(`Requesting team members: ${teamReviewers}`);
+  core.info(`Requesting team members123: ${teamReviewers}`);
 
   // 不夠的話從 mentorship group 抽到滿
   if (reviewers.length < 2) {
