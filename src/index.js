@@ -82,7 +82,7 @@ async function run() {
 
     const alreadyInvolvedUsers = [...reviewedUsers, ...requestedUsers];
 
-    if (alreadyInvolvedUsers.length) {
+    if (alreadyInvolvedUsers.length > 0) {
       core.info(`Currently requested users: ${alreadyInvolvedUsers}`);
     }
 
