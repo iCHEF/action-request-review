@@ -37,67 +37,27 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-function randomPick(pickCount, candidates = []) {
-  const results = [];
-  const shuffledCandidates = _.shuffle(candidates);
-
-  while (results.length < pickCount && shuffledCandidates.length > 0) {
-    const candidate = shuffledCandidates.pop();
-    results.push(candidate);
-  }
-
-  return results;
-}
-
 async function getReviewers(username, initialReviewers = []) {
   const reviewers = [];
   const config = await fetchAndParseReviewers();
-  const targetCount = core.getInput('count');
+  const targetCount = core.getInput('count') - initialReviewers.length;
 
   const mentor = config.mentors[username];
 
-  // 先抽 mentor
-  if (mentor) {
-    if (initialReviewers.includes(mentor)) {
-      core.info(`Mentor ${mentor} already requested.`);
-    } else {
-      core.info(`Requesting mentor: ${mentor}`);
-      reviewers.push(mentor);
-    }
-  } else {
-    core.info(`No mentor found.`);
-  }
+  const belongingTeamMembers = Object.values(config.teams)
+      .find(teamMembers => teamMembers.includes(username));
 
-  // 再從同專案團隊優先抽滿
-  {
-    const belongingTeamMembers = Object.values(config.teams)
-      .find(teamMembers => teamMembers.includes(username))
-      .filter(member => member !== username);
+  const mentorshipGroupMembers = config.mentorshipGroups
+      .find(group => group.includes(username));
 
-    const candidates = _.difference(belongingTeamMembers, reviewers, initialReviewers);
-    const remainingCount = targetCount - reviewers.length;
-    const teamReviewers = randomPick(remainingCount, candidates);
-    reviewers.push(...teamReviewers);
+  const allCandidates = _.uniq([
+    mentor,
+    _.shuffle(belongingTeamMembers),
+    _.shuffle(mentorshipGroupMembers),
+  ]);
+  const eligibleCandidates = _.difference(allCandidates, initialReviewers);
 
-    core.info(`Requesting team members: ${teamReviewers}`);
-  }
-
-  // 不夠的話從 mentorship group 抽到滿
-  if (reviewers.length < 2) {
-    const mentorshipGroupMembers = config.mentorshipGroups
-      .find(group => group.includes(username))
-      .filter(member => member !== username);
-
-    const candidates = _.difference(mentorshipGroupMembers, reviewers, initialReviewers);
-    const remainingCount = targetCount - reviewers.length;
-    const groupReviewers = randomPick(remainingCount, candidates);
-
-    reviewers.push(...groupReviewers);
-
-    core.info(`Requesting extra reviewers: ${groupReviewers}`);
-  }
-
-  return reviewers;
+  return _.take(eligibleCandidates, targetCount);
 }
 
 async function run() {
@@ -132,6 +92,8 @@ async function run() {
     }
 
     const reviewers = await getReviewers(author, alreadyInvolvedUsers);
+
+    core.info(`Requested reviewers: ${reviewers}`);
 
     await octokit.pulls.requestReviewers({
       ...pullRequest,
