@@ -42,6 +42,8 @@ async function getReviewers(username, initialReviewers = []) {
   const config = await fetchAndParseReviewers();
   const targetCount = core.getInput('count') - initialReviewers.length;
 
+  core.info(`Taking ${targetCount} reviewers.`);
+
   const mentor = config.mentors[username];
 
   const belongingTeamMembers = Object.values(config.teams)
@@ -52,10 +54,11 @@ async function getReviewers(username, initialReviewers = []) {
 
   const allCandidates = _.uniq([
     mentor,
-    _.shuffle(belongingTeamMembers),
-    _.shuffle(mentorshipGroupMembers),
-  ]);
-  const eligibleCandidates = _.difference(allCandidates, initialReviewers);
+    ..._.shuffle(belongingTeamMembers),
+    ..._.shuffle(mentorshipGroupMembers),
+  ]).filter(Boolean);
+
+  const eligibleCandidates = _.difference(allCandidates, initialReviewers, [username]);
 
   return _.take(eligibleCandidates, targetCount);
 }
