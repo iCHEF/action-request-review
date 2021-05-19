@@ -37,75 +37,69 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-function randomPick(pickCount, candidates = []) {
-  const results = [];
-  const shuffledCandidates = _.shuffle(candidates);
-
-  while (results.length < pickCount && shuffledCandidates.length > 0) {
-    const candidate = shuffledCandidates.pop();
-    results.push(candidate);
-  }
-
-  return results;
-}
-
-async function getReviewers(username) {
+async function getReviewers(username, initialReviewers = []) {
   const reviewers = [];
   const config = await fetchAndParseReviewers();
-  const targetCount = core.getInput('count');
+  const targetCount = core.getInput('count') - initialReviewers.length;
+
+  core.info(`Taking ${targetCount} reviewers.`);
 
   const mentor = config.mentors[username];
 
-  // 先抽 mentor
-  if (mentor) {
-    core.info(`Requesting mentor: ${mentor}`);
-    reviewers.push(mentor);
-  } else {
-    core.info(`No mentor found.`);
-  }
-
-  // 再從同專案團隊優先抽滿
   const belongingTeamMembers = Object.values(config.teams)
-    .find(teamMembers => teamMembers.includes(username))
-    .filter(member => member !== username && member!== mentor);
+      .find(teamMembers => teamMembers.includes(username));
 
-  const remainingCount = targetCount - reviewers.length;
-  const teamReviewers = randomPick(remainingCount, belongingTeamMembers);
-  reviewers.push(...teamReviewers);
+  const mentorshipGroupMembers = config.mentorshipGroups
+      .find(group => group.includes(username));
 
-  core.info(`Requesting team members: ${teamReviewers}`);
+  const allCandidates = _.uniq([
+    mentor,
+    ..._.shuffle(belongingTeamMembers),
+    ..._.shuffle(mentorshipGroupMembers),
+  ]).filter(Boolean);
 
-  // 不夠的話從 mentorship group 抽到滿
-  if (reviewers.length < 2) {
-    const mentorshipGroupMembers = config.mentorshipGroups
-      .find(group => group.includes(username))
-      .filter(member => member !== username);
+  const eligibleCandidates = _.difference(allCandidates, initialReviewers, [username]);
 
-    const candidates = _.difference(mentorshipGroupMembers, reviewers);
-    const remainingCount = targetCount - reviewers.length;
-    const groupReviewers = randomPick(remainingCount, candidates);
-
-    reviewers.push(...groupReviewers);
-
-    core.info(`Requesting extra reviewers: ${groupReviewers}`);
-  }
-
-  return reviewers;
+  return _.take(eligibleCandidates, targetCount);
 }
 
 async function run() {
   const context = github.context;
+  const pullRequest = {
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number,
+  };
 
   try {
+    const targetCount = core.getInput('count');
     const author = context.payload.pull_request.user.login;
-    const reviewers = await getReviewers(author);
+
+    const reviewedUsers = await octokit.pulls.listReviews(pullRequest)
+      .then(result => result.data.map(review => review.user.login))
+      .then(_.uniq)
+      .then(usernames => _.without(usernames, author));
+
+    const requestedUsers = await octokit.pulls.listRequestedReviewers(pullRequest)
+      .then(result => result.data.users.map(user => user.login));
+
+    const alreadyInvolvedUsers = [...reviewedUsers, ...requestedUsers];
+
+    if (alreadyInvolvedUsers.length > 0) {
+      core.info(`Currently requested users: ${alreadyInvolvedUsers}`);
+    }
+
+    if (alreadyInvolvedUsers.length >= targetCount) {
+      core.info(`Already meet target ${targetCount} reviewers.`);
+      return;
+    }
+
+    const reviewers = await getReviewers(author, alreadyInvolvedUsers);
 
     core.info(`Requested reviewers: ${reviewers}`);
 
     await octokit.pulls.requestReviewers({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      pull_number: context.payload.pull_request.number,
+      ...pullRequest,
       reviewers,
     });
   } catch (error) {
