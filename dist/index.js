@@ -29969,6 +29969,12 @@ async function getReviewers(username, initialReviewers = []) {
 
 async function run() {
   const context = github.context;
+
+  // skip draft pull request
+  if (context.payload.pull_request.draft) {
+    return;
+  }
+
   const pullRequest = {
     owner: context.repo.owner,
     repo: context.repo.repo,
