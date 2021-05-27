@@ -66,7 +66,8 @@ async function getReviewers(username, initialReviewers = []) {
 async function run() {
   const context = github.context;
 
-  if(context.payload.pull_request.draft) {
+  // skip draft pull request
+  if (context.payload.pull_request.draft) {
     return;
   }
 
