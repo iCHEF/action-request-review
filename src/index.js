@@ -70,30 +70,47 @@ async function getUsersSortedByReviewLoading(usernamesList) {
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
 };
 
-async function getReviewers(username, initialReviewers = []) {
-  const reviewers = [];
+async function getReviewers(author, initialReviewers = []) {
+  let reviewers = [];
   const config = await fetchAndParseReviewers();
   const targetCount = core.getInput('count') - initialReviewers.length;
 
   core.info(`Taking ${targetCount} reviewers.`);
 
-  const mentor = config.mentors[username];
+  const mentor = config.mentors[author];
 
-  const belongingTeamMembers = Object.values(config.teams)
-      .find(teamMembers => teamMembers.includes(username));
+  // start from team member
+  const belongingTeamMembers = await getUsersSortedByReviewLoading(
+    _.difference(
+      Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
+      initialReviewers,
+      [author]
+    )
+  );
+  reviewers = _.take(belongingTeamMembers, targetCount);
+  reviewers.forEach(({ username, reviewLoading }) => {
+    core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
+  });
 
-  const mentorshipGroupMembers = config.mentorshipGroups
-      .find(group => group.includes(username));
+  // if not enought, take from mentorship group
+  if (reviewers.length < targetCount) {
+    const mentorshipGroupMembers = await getUsersSortedByReviewLoading(
+      _.difference(
+        config.mentorshipGroups.find(group => group.includes(author)),
+        initialReviewers,
+        [author]
+      )
+    );
+    const remainingCount = targetCount - reviewers.length;
+    const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
+    extraReviewers.forEach(({ username, reviewLoading }) => {
+      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
+    });
 
-  const allCandidates = _.uniq([
-    mentor,
-    ..._.shuffle(belongingTeamMembers),
-    ..._.shuffle(mentorshipGroupMembers),
-  ]).filter(Boolean);
+    reviewers = reviewers.concat(extraReviewers);
+  }
 
-  const eligibleCandidates = _.difference(allCandidates, initialReviewers, [username]);
-
-  return _.take(eligibleCandidates, targetCount);
+  return reviewers.map(({ username }) => username);
 }
 
 async function run() {
