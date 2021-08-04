@@ -2,6 +2,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
+const dateFns = require('date-fns');
 
 const core = require('@actions/core');
 const github = require('@actions/github');
@@ -36,6 +37,38 @@ async function fetchAndParseReviewers() {
   const config = yaml.parse(firstFile.content);
   return config;
 }
+
+async function getReviewLoadingOfUser(username) {
+  const dateOf2WeeksAgo = dateFns.formatISO(
+    dateFns.sub(new Date, { weeks: 2 }),
+    { representation: 'date' }
+  );
+
+  const {
+    data: { total_count: countOfRequestedPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo}`,
+  });
+
+  const {
+    data: { total_count: countOfReviewdPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo}`,
+  });
+
+  return countOfRequestedPulls + countOfReviewdPulls;
+}
+
+async function getUsersSortedByReviewLoading(usernamesList) {
+  const usersWithReviewLoading = await Promise.all(
+    usernamesList.map(async username => ({
+      username,
+      reviewLoading: await getRecentLoadingOfUser(username),
+    }))
+  );
+
+  return _.sortBy(usersWithReviewLoading, 'reviewLoading');
+};
 
 async function getReviewers(username, initialReviewers = []) {
   const reviewers = [];
