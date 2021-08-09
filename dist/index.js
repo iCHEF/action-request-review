@@ -52050,7 +52050,7 @@ async function getUsersSortedByReviewLoading(usernamesList) {
   const usersWithReviewLoading = await Promise.all(
     usernamesList.map(async username => ({
       username,
-      reviewLoading: await getRecentLoadingOfUser(username),
+      reviewLoading: await getReviewLoadingOfUser(username),
     }))
   );
 
