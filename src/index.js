@@ -2,6 +2,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
+const dateFns = require('date-fns');
 
 const core = require('@actions/core');
 const github = require('@actions/github');
@@ -37,30 +38,79 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-async function getReviewers(username, initialReviewers = []) {
-  const reviewers = [];
+async function getReviewLoadingOfUser(username) {
+  const dateOf2WeeksAgo = dateFns.formatISO(
+    dateFns.sub(new Date, { weeks: 2 }),
+    { representation: 'date' }
+  );
+
+  const {
+    data: { total_count: countOfRequestedPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo}`,
+  });
+
+  const {
+    data: { total_count: countOfReviewdPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo}`,
+  });
+
+  return countOfRequestedPulls + countOfReviewdPulls;
+}
+
+async function getUsersSortedByReviewLoading(usernamesList) {
+  const usersWithReviewLoading = await Promise.all(
+    usernamesList.map(async username => ({
+      username,
+      reviewLoading: await getRecentLoadingOfUser(username),
+    }))
+  );
+
+  return _.sortBy(usersWithReviewLoading, 'reviewLoading');
+};
+
+async function getReviewers(author, initialReviewers = []) {
+  let reviewers = [];
   const config = await fetchAndParseReviewers();
   const targetCount = core.getInput('count') - initialReviewers.length;
 
   core.info(`Taking ${targetCount} reviewers.`);
 
-  const mentor = config.mentors[username];
+  const mentor = config.mentors[author];
 
-  const belongingTeamMembers = Object.values(config.teams)
-      .find(teamMembers => teamMembers.includes(username));
+  // start from team member
+  const belongingTeamMembers = await getUsersSortedByReviewLoading(
+    _.difference(
+      Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
+      initialReviewers,
+      [author]
+    )
+  );
+  reviewers = _.take(belongingTeamMembers, targetCount);
+  reviewers.forEach(({ username, reviewLoading }) => {
+    core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
+  });
 
-  const mentorshipGroupMembers = config.mentorshipGroups
-      .find(group => group.includes(username));
+  // if not enought, take from mentorship group
+  if (reviewers.length < targetCount) {
+    const mentorshipGroupMembers = await getUsersSortedByReviewLoading(
+      _.difference(
+        config.mentorshipGroups.find(group => group.includes(author)),
+        initialReviewers,
+        [author]
+      )
+    );
+    const remainingCount = targetCount - reviewers.length;
+    const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
+    extraReviewers.forEach(({ username, reviewLoading }) => {
+      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
+    });
 
-  const allCandidates = _.uniq([
-    mentor,
-    ..._.shuffle(belongingTeamMembers),
-    ..._.shuffle(mentorshipGroupMembers),
-  ]).filter(Boolean);
+    reviewers = reviewers.concat(extraReviewers);
+  }
 
-  const eligibleCandidates = _.difference(allCandidates, initialReviewers, [username]);
-
-  return _.take(eligibleCandidates, targetCount);
+  return reviewers.map(({ username }) => username);
 }
 
 async function run() {
