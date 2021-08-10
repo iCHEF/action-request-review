@@ -52057,47 +52057,69 @@ async function getUsersSortedByReviewLoading(usernamesList) {
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
 };
 
-async function getReviewers(author, initialReviewers = []) {
-  let reviewers = [];
-  const config = await fetchAndParseReviewers();
+function getReviewers(author, initialReviewers = []) {
   const targetCount = core.getInput('count') - initialReviewers.length;
+  let config;
 
-  core.info(`Taking ${targetCount} reviewers.`);
+  return fetchAndParseReviewers()
+    .then((fetchedConfig) => {
+      config = fetchedConfig;
+      core.info(`Taking ${targetCount} reviewers.`);
+    })
+    // start from mentor
+    .then(() => {
+      const mentor = config.mentors[author];
 
-  const mentor = config.mentors[author];
+      if (mentor && !initialReviewers.includes(mentor)) {
+        core.info(`Taking mentor: ${mentor}`);
+        return [[mentor], targetCount - 1];
+      }
+      return [[], targetCount];
+    })
+    // if not enought, take from team members
+    .then(async ([reviewers, remainingCount]) => {
+      if (remainingCount <= 0) {
+        return [reviewers, remainingCount];
+      }
 
-  // start from team member
-  const belongingTeamMembers = await getUsersSortedByReviewLoading(
-    _.difference(
-      Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
-      initialReviewers,
-      [author]
-    )
-  );
-  reviewers = _.take(belongingTeamMembers, targetCount);
-  reviewers.forEach(({ username, reviewLoading }) => {
-    core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
-  });
+      const belongingTeamMembers = await getUsersSortedByReviewLoading(
+        _.difference(
+          Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
+          reviewers,
+          [author]
+        )
+      );
+      const reviewersFromTeam = _.take(belongingTeamMembers, remainingCount);
+      reviewersFromTeam.forEach(({ username, reviewLoading }) => {
+        core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
+      });
 
-  // if not enought, take from mentorship group
-  if (reviewers.length < targetCount) {
-    const mentorshipGroupMembers = await getUsersSortedByReviewLoading(
-      _.difference(
-        config.mentorshipGroups.find(group => group.includes(author)),
-        initialReviewers,
-        [author]
-      )
-    );
-    const remainingCount = targetCount - reviewers.length;
-    const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
-    extraReviewers.forEach(({ username, reviewLoading }) => {
-      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
-    });
+      return [
+        [...reviewers, ...reviewersFromTeam],
+        remainingCount - reviewersFromTeam.length,
+      ];
+    })
+    // if still not enought, take from mentorship group
+    .then(async ([reviewers, remainingCount]) => {
+      if (remainingCount <= 0) {
+        return [reviewers, remainingCount];
+      }
 
-    reviewers = reviewers.concat(extraReviewers);
-  }
+      const mentorshipGroupMembers = await getUsersSortedByReviewLoading(
+        _.difference(
+          config.mentorshipGroups.find(group => group.includes(author)),
+          reviewers,
+          [author]
+        )
+      );
+      const reviewersFromMentorship = _.take(mentorshipGroupMembers, remainingCount);
+      reviewersFromMentorship.forEach(({ username, reviewLoading }) => {
+        core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
+      });
 
-  return reviewers.map(({ username }) => username);
+      return [...reviewers, ...reviewersFromMentorship];
+    })
+    .then(reviewers => reviewers.map(({ username }) => username));
 }
 
 async function run() {
