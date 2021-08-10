@@ -77,17 +77,24 @@ async function getReviewers(author, initialReviewers = []) {
 
   core.info(`Taking ${targetCount} reviewers.`);
 
+  // start from mentor and team members
   const mentor = config.mentors[author];
-
-  // start from team member
   const belongingTeamMembers = await getUsersSortedByReviewLoading(
     _.difference(
       Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
       initialReviewers,
-      [author]
+      [author, mentor]
     )
   );
-  reviewers = _.take(belongingTeamMembers, targetCount);
+
+  const firstBatchCandidates = mentor
+      ? ([
+        { username: mentor, reviewLoading: '(mentor)'},
+        ...belongingTeamMembers,
+      ])
+      : belongingTeamMembers;
+
+  reviewers = _.take(firstBatchCandidates, targetCount);
   reviewers.forEach(({ username, reviewLoading }) => {
     core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
   });
