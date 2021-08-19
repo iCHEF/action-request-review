@@ -105,6 +105,7 @@ async function getReviewers(author, initialReviewers = []) {
       _.difference(
         config.mentorshipGroups.find(group => group.includes(author)),
         initialReviewers,
+        reviewers.map(({ username }) => username),
         [author]
       )
     );
