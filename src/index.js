@@ -38,33 +38,45 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-async function getReviewLoadingOfUser(username) {
+async function getReviewLoadingOfUser(username, menteesList = []) {
   const dateOf2WeeksAgo = dateFns.formatISO(
     dateFns.sub(new Date, { weeks: 2 }),
     { representation: 'date' }
   );
 
+  const queryStringToExclude = menteesList
+    .map(mentee => `-author:${mentee}`)
+    .join(' ');
+
+  core.info(queryStringToExclude);
+
   const {
     data: { total_count: countOfRequestedPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo}`,
+    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo} ${queryStringToExclude}`,
   });
 
   const {
     data: { total_count: countOfReviewdPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo}`,
+    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo} ${queryStringToExclude}`,
   });
 
   return countOfRequestedPulls + countOfReviewdPulls;
 }
 
-async function getUsersSortedByReviewLoading(usernamesList) {
+async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
   const usersWithReviewLoading = await Promise.all(
-    usernamesList.map(async username => ({
-      username,
-      reviewLoading: await getReviewLoadingOfUser(username),
-    }))
+    usernamesList.map(async (username) => {
+      const menteesList = Object.entries(mentorMap)
+        .filter(([_, mentorName]) => mentorName === username)
+        .map(([mentee]) => mentee);
+
+      return {
+        username,
+        reviewLoading: await getReviewLoadingOfUser(username, menteesList),
+      };
+    })
   );
 
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
@@ -84,7 +96,8 @@ async function getReviewers(author, initialReviewers = []) {
       Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
       initialReviewers,
       [author, mentor]
-    )
+    ),
+    config.mentors
   );
 
   const firstBatchCandidates = mentor
@@ -107,7 +120,8 @@ async function getReviewers(author, initialReviewers = []) {
         initialReviewers,
         reviewers.map(({ username }) => username),
         [author]
-      )
+      ),
+      config.mentors
     );
     const remainingCount = targetCount - reviewers.length;
     const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
