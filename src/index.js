@@ -48,7 +48,7 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
     .map(mentee => `-author:${mentee}`)
     .join(' ');
 
-  core.info(queryStringToExclude);
+  core.info(`  > calculating:${username} ${queryStringToExclude}`);
 
   const {
     data: { total_count: countOfRequestedPulls },
@@ -109,7 +109,7 @@ async function getReviewers(author, initialReviewers = []) {
 
   reviewers = _.take(firstBatchCandidates, targetCount);
   reviewers.forEach(({ username, reviewLoading }) => {
-    core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
+    core.info(`Taking from team: ${username} (loading=${reviewLoading}).\n`);
   });
 
   // if not enought, take from mentorship group
@@ -126,7 +126,7 @@ async function getReviewers(author, initialReviewers = []) {
     const remainingCount = targetCount - reviewers.length;
     const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
     extraReviewers.forEach(({ username, reviewLoading }) => {
-      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
+      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).\n`);
     });
 
     reviewers = reviewers.concat(extraReviewers);
