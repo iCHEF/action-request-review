@@ -39,13 +39,16 @@ async function fetchAndParseReviewers() {
 }
 
 async function getReviewLoadingOfUser(username, menteesList = []) {
+  const MENTEE_PULL_WEIGHT_RATIO = 0.5;
+
   const dateOf2WeeksAgo = dateFns.formatISO(
     dateFns.sub(new Date, { weeks: 2 }),
     { representation: 'date' }
   );
+  const baseCriteria = `is:pr user:iCHEF created:>${dateOf2WeeksAgo}`;
 
-  const queryStringToExclude = menteesList
-    .map(mentee => `-author:${mentee}`)
+  const queryStringForMentee = menteesList
+    .map(mentee => `author:${mentee}`)
     .join(' ');
 
   core.info(`  > calculating:${username} ${queryStringToExclude}`);
@@ -53,16 +56,29 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
   const {
     data: { total_count: countOfRequestedPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo} ${queryStringToExclude}`,
+    q: `${baseCriteria} review-requested:${username}`,
+  });
+  const {
+    data: { total_count: countOfRequestedPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
   });
 
   const {
     data: { total_count: countOfReviewdPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo} -author:${username} ${queryStringToExclude}`,
+    q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
+  });
+  const {
+    data: { total_count: countOfReviewdPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
   });
 
-  return countOfRequestedPulls + countOfReviewdPulls;
+  return countOfRequestedPulls
+    + countOfReviewdPulls
+    - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
+    - (countOfReviewdPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO);
 }
 
 async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
