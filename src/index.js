@@ -59,7 +59,7 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
   const {
     data: { total_count: countOfReviewdPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo} ${queryStringToExclude}`,
+    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo} -author:${username} ${queryStringToExclude}`,
   });
 
   return countOfRequestedPulls + countOfReviewdPulls;
