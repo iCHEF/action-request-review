@@ -51,7 +51,7 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
     .map(mentee => `author:${mentee}`)
     .join(' ');
 
-  core.info(`  > calculating:${username} ${queryStringToExclude}`);
+  core.info(`  > calculating:${username}, mentee: ${JSON.stringify(menteesList)}`);
 
   const {
     data: { total_count: countOfRequestedPulls },
