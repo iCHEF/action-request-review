@@ -46,7 +46,7 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
     dateFns.sub(new Date, { weeks: 2 }),
     { representation: 'date' }
   );
-  const baseCriteria = `is:pr user:iCHEF created:>${dateOf2WeeksAgo} -label:"auto-pr" -label:"merge request" -author:app/github-actions`;
+  const baseCriteria = `is:pr user:iCHEF created:>${dateOf2WeeksAgo} -label:"auto-pr" -label:"merge request" -author:app/github-actions -author:ichefbot`;
 
   const {
     data: { total_count: countOfRequestedPulls },
