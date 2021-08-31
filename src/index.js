@@ -38,33 +38,66 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-async function getReviewLoadingOfUser(username) {
+async function getReviewLoadingOfUser(username, menteesList = []) {
+  const MENTEE_PULL_WEIGHT_RATIO = 0.5;
+  core.info(`  > calculating:${username}, mentee: ${JSON.stringify(menteesList)}`);
+
   const dateOf2WeeksAgo = dateFns.formatISO(
     dateFns.sub(new Date, { weeks: 2 }),
     { representation: 'date' }
   );
+  const baseCriteria = `is:pr user:iCHEF created:>${dateOf2WeeksAgo} -label:"auto-pr" -label:"merge request" -author:app/github-actions -author:ichefbot`;
 
   const {
     data: { total_count: countOfRequestedPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF review-requested:${username} created:>${dateOf2WeeksAgo}`,
+    q: `${baseCriteria} review-requested:${username}`,
   });
-
   const {
     data: { total_count: countOfReviewdPulls },
   } = await octokit.search.issuesAndPullRequests({
-    q: `is:pr user:iCHEF reviewed-by:${username} created:>${dateOf2WeeksAgo}`,
+    q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
   });
 
-  return countOfRequestedPulls + countOfReviewdPulls;
+  const totalCountOfPulls = countOfRequestedPulls + countOfReviewdPulls;
+
+  // if has no mentee
+  if (menteesList.length < 1) {
+    return totalCountOfPulls;
+  }
+
+  const queryStringForMentee = menteesList
+    .map(mentee => `author:${mentee}`)
+    .join(' ');
+
+  const {
+    data: { total_count: countOfRequestedPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
+  });
+  const {
+    data: { total_count: countOfReviewdPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
+  });
+
+  return totalCountOfPulls
+    - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
+    - (countOfReviewdPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO);
 }
 
-async function getUsersSortedByReviewLoading(usernamesList) {
+async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
   const usersWithReviewLoading = await Promise.all(
-    usernamesList.map(async username => ({
-      username,
-      reviewLoading: await getReviewLoadingOfUser(username),
-    }))
+    usernamesList.map(async (username) => {
+      const menteesList = Object.entries(mentorMap)
+        .filter(([_, mentorName]) => mentorName === username)
+        .map(([mentee]) => mentee);
+
+      return {
+        username,
+        reviewLoading: await getReviewLoadingOfUser(username, menteesList),
+      };
+    })
   );
 
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
@@ -84,7 +117,8 @@ async function getReviewers(author, initialReviewers = []) {
       Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
       initialReviewers,
       [author, mentor]
-    )
+    ),
+    config.mentors
   );
 
   const firstBatchCandidates = mentor
@@ -96,7 +130,7 @@ async function getReviewers(author, initialReviewers = []) {
 
   reviewers = _.take(firstBatchCandidates, targetCount);
   reviewers.forEach(({ username, reviewLoading }) => {
-    core.info(`Taking from team: ${username} (loading=${reviewLoading}).`);
+    core.info(`Taking from team: ${username} (loading=${reviewLoading}).\n`);
   });
 
   // if not enought, take from mentorship group
@@ -107,12 +141,13 @@ async function getReviewers(author, initialReviewers = []) {
         initialReviewers,
         reviewers.map(({ username }) => username),
         [author]
-      )
+      ),
+      config.mentors
     );
     const remainingCount = targetCount - reviewers.length;
     const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
     extraReviewers.forEach(({ username, reviewLoading }) => {
-      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).`);
+      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).\n`);
     });
 
     reviewers = reviewers.concat(extraReviewers);
