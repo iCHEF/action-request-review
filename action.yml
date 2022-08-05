@@ -4,9 +4,13 @@ inputs:
   token:
     required: true
     description: GitHub token
+  count:
+    required: false
+    default: "2"
+    description: How many reviewers to request. Default 2.
   config_gist_id:
     required: true
-    description: gist id to config.yml
+    description: Gist id to config.yml
 runs:
   using: node12
   main: dist/index.js

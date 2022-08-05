@@ -2,6 +2,7 @@ const _ = require('lodash');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
+const dateFns = require('date-fns');
 
 const core = require('@actions/core');
 const github = require('@actions/github');
@@ -37,58 +38,167 @@ async function fetchAndParseReviewers() {
   return config;
 }
 
-function randomPick(pickCount, candidates = []) {
-  const results = [];
-  const shuffledCandidates = _.shuffle(candidates);
+async function getReviewLoadingOfUser(username, menteesList = []) {
+  const MENTEE_PULL_WEIGHT_RATIO = 0.5;
+  core.info(`  > calculating:${username}, mentee: ${JSON.stringify(menteesList)}`);
 
-  while (results.length < pickCount && shuffledCandidates.length > 0) {
-    const candidate = shuffledCandidates.pop();
-    results.push(candidate);
+  const dateOf2WeeksAgo = dateFns.formatISO(
+    dateFns.sub(new Date, { weeks: 2 }),
+    { representation: 'date' }
+  );
+  const baseCriteria = `is:pr user:iCHEF created:>${dateOf2WeeksAgo} -label:"auto-pr" -label:"merge request" -author:app/github-actions -author:ichefbot`;
+
+  const {
+    data: { total_count: countOfRequestedPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} review-requested:${username}`,
+  });
+  const {
+    data: { total_count: countOfReviewdPulls },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
+  });
+
+  const totalCountOfPulls = countOfRequestedPulls + countOfReviewdPulls;
+
+  // if has no mentee
+  if (menteesList.length < 1) {
+    return totalCountOfPulls;
   }
 
-  return results;
+  const queryStringForMentee = menteesList
+    .map(mentee => `author:${mentee}`)
+    .join(' ');
+
+  const {
+    data: { total_count: countOfRequestedPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
+  });
+  const {
+    data: { total_count: countOfReviewdPullsFromMentee },
+  } = await octokit.search.issuesAndPullRequests({
+    q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
+  });
+
+  return totalCountOfPulls
+    - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
+    - (countOfReviewdPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO);
 }
 
-async function getReviewers(username) {
-  const reviewers = [];
+async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
+  const usersWithReviewLoading = await Promise.all(
+    usernamesList.map(async (username) => {
+      const menteesList = Object.entries(mentorMap)
+        .filter(([_, mentorName]) => mentorName === username)
+        .map(([mentee]) => mentee);
+
+      return {
+        username,
+        reviewLoading: await getReviewLoadingOfUser(username, menteesList),
+      };
+    })
+  );
+
+  return _.sortBy(usersWithReviewLoading, 'reviewLoading');
+};
+
+async function getReviewers(author, initialReviewers = []) {
+  let reviewers = [];
   const config = await fetchAndParseReviewers();
+  const targetCount = core.getInput('count') - initialReviewers.length;
 
-  // 先指定 mentor
-  reviewers.push(config.mentors[username]);
+  core.info(`Taking ${targetCount} reviewers.`);
 
-  // 再從同專案團隊抽 1 人
-  const belongingTeamMembers = Object.values(config.teams)
-    .find(teamMembers => teamMembers.includes(username))
-    .filter(member => member !== username);
+  // start from mentor and team members
+  const mentor = config.mentors[author];
+  const belongingTeamMembers = await getUsersSortedByReviewLoading(
+    _.difference(
+      Object.values(config.teams).find(teamMembers => teamMembers.includes(author)),
+      initialReviewers,
+      [author, mentor]
+    ),
+    config.mentors
+  );
 
-  reviewers.push(...randomPick(1, belongingTeamMembers));
+  const firstBatchCandidates = mentor
+      ? ([
+        { username: mentor, reviewLoading: '(mentor)'},
+        ...belongingTeamMembers,
+      ])
+      : belongingTeamMembers;
 
-  // 不夠的話從 mentorship group 抽 1 人
-  if (reviewers.length < 2) {
-    const mentorshipGroupMembers = config.mentorshipGroups
-      .find(group => group.includes(username))
-      .filter(member => member !== username);
+  reviewers = _.take(firstBatchCandidates, targetCount);
+  reviewers.forEach(({ username, reviewLoading }) => {
+    core.info(`Taking from team: ${username} (loading=${reviewLoading}).\n`);
+  });
 
-    const candidates = _.difference(mentorshipGroupMembers, reviewers);
-    reviewers.push(...randomPick(1, candidates));
+  // if not enought, take from mentorship group
+  if (reviewers.length < targetCount) {
+    const mentorshipGroupMembers = await getUsersSortedByReviewLoading(
+      _.difference(
+        config.mentorshipGroups.find(group => group.includes(author)),
+        initialReviewers,
+        reviewers.map(({ username }) => username),
+        [author]
+      ),
+      config.mentors
+    );
+    const remainingCount = targetCount - reviewers.length;
+    const extraReviewers = _.take(mentorshipGroupMembers, remainingCount);
+    extraReviewers.forEach(({ username, reviewLoading }) => {
+      core.info(`Taking from mentorship group: ${username} (loading=${reviewLoading}).\n`);
+    });
+
+    reviewers = reviewers.concat(extraReviewers);
   }
 
-  return reviewers;
+  return reviewers.map(({ username }) => username);
 }
 
 async function run() {
   const context = github.context;
 
-  try {
-    const author = context.payload.pull_request.user.login;
-    const reviewers = await getReviewers(author);
+  // skip draft pull request
+  if (context.payload.pull_request.draft) {
+    return;
+  }
 
-    core.info(`Requesting reviews from: ${reviewers}`);
+  const pullRequest = {
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    pull_number: context.payload.pull_request.number,
+  };
+
+  try {
+    const targetCount = core.getInput('count');
+    const author = context.payload.pull_request.user.login;
+
+    const reviewedUsers = await octokit.pulls.listReviews(pullRequest)
+      .then(result => result.data.map(review => review.user.login))
+      .then(_.uniq)
+      .then(usernames => _.without(usernames, author));
+
+    const requestedUsers = await octokit.pulls.listRequestedReviewers(pullRequest)
+      .then(result => result.data.users.map(user => user.login));
+
+    const alreadyInvolvedUsers = [...reviewedUsers, ...requestedUsers];
+
+    if (alreadyInvolvedUsers.length > 0) {
+      core.info(`Currently requested users: ${alreadyInvolvedUsers}`);
+    }
+
+    if (alreadyInvolvedUsers.length >= targetCount) {
+      core.info(`Already meet target ${targetCount} reviewers.`);
+      return;
+    }
+
+    const reviewers = await getReviewers(author, alreadyInvolvedUsers);
+
+    core.info(`Requested reviewers: ${reviewers}`);
 
     await octokit.pulls.requestReviewers({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      pull_number: context.payload.pull_request.number,
+      ...pullRequest,
       reviewers,
     });
   } catch (error) {
