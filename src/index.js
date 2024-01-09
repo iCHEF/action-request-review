@@ -87,18 +87,22 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 }
 
 async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
-  const usersWithReviewLoading = await Promise.all(
-    usernamesList.map(async (username) => {
-      const menteesList = Object.entries(mentorMap)
-        .filter(([_, mentorName]) => mentorName === username)
-        .map(([mentee]) => mentee);
+  let usersWithReviewLoading = [];
 
-      return {
-        username,
-        reviewLoading: await getReviewLoadingOfUser(username, menteesList),
-      };
-    })
-  );
+  /**
+   * TODO: Here we do not use Promise.all to avoid too many requests at the same time.
+   * Maybe we can use Promise.all with a limit of concurrency.
+   */
+  for(const username of usernamesList) {
+    const menteesList = Object.entries(mentorMap)
+      .filter(([_, mentorName]) => mentorName === username)
+      .map(([mentee]) => mentee);
+
+    usersWithReviewLoading.push({
+      username,
+      reviewLoading: await getReviewLoadingOfUser(username, menteesList),
+    });
+  };
 
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
 };
