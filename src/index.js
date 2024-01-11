@@ -7,6 +7,45 @@ const dateFns = require('date-fns');
 const core = require('@actions/core');
 const github = require('@actions/github');
 
+const createRateLimiter = ({ interval = 1000 }) => {
+  const queue = [];
+  let counter = 0;
+  let running = false;
+
+  const rateLimiter = {
+    run: async fn => new Promise((resolve, reject) => {
+      queue.push({ fn, resolve, reject });
+      counter += 1;
+      if (!running) {
+        const handle = setInterval(
+          () => {
+            if (queue.length > 0) {
+              const task = queue.shift();
+              running = true;
+              task.fn()
+                .then(task.resolve)
+                .catch(task.reject)
+                .finally(() => {
+                  counter -= 1;
+                  if (counter === 0) {
+                    clearInterval(handle);
+                    running = false;
+                  }
+                });
+            }
+          },
+          interval
+        );
+        running = true;
+      }
+    }),
+  };
+
+  return rateLimiter;
+};
+
+const rateLimiter = createRateLimiter({ interval: 1000 });
+
 /**
  * @typedef {[]} Username
  * @typedef {Username[]} MentorshipGroup
@@ -50,14 +89,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPulls },
-  } = await octokit.search.issuesAndPullRequests({
+  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username}`,
-  });
+  }));
   const {
     data: { total_count: countOfReviewdPulls },
-  } = await octokit.search.issuesAndPullRequests({
+  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
-  });
+  }));
 
   const totalCountOfPulls = countOfRequestedPulls + countOfReviewdPulls;
 
@@ -72,14 +111,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPullsFromMentee },
-  } = await octokit.search.issuesAndPullRequests({
+  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
-  });
+  }));
   const {
     data: { total_count: countOfReviewdPullsFromMentee },
-  } = await octokit.search.issuesAndPullRequests({
+  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
-  });
+  }));
 
   return totalCountOfPulls
     - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
@@ -87,22 +126,16 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 }
 
 async function getUsersSortedByReviewLoading(usernamesList, mentorMap) {
-  let usersWithReviewLoading = [];
-
-  /**
-   * TODO: Here we do not use Promise.all to avoid too many requests at the same time.
-   * Maybe we can use Promise.all with a limit of concurrency.
-   */
-  for(const username of usernamesList) {
+  const usersWithReviewLoading = await Promise.all(usernamesList.map(async username => {
     const menteesList = Object.entries(mentorMap)
       .filter(([_, mentorName]) => mentorName === username)
       .map(([mentee]) => mentee);
 
-    usersWithReviewLoading.push({
+    return {
       username,
       reviewLoading: await getReviewLoadingOfUser(username, menteesList),
-    });
-  };
+    };
+  }));
 
   return _.sortBy(usersWithReviewLoading, 'reviewLoading');
 };
