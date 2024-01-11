@@ -52031,7 +52031,7 @@ const createRateLimiter = ({ interval = 1000 }) => {
   return rateLimiter;
 };
 
-const rateLimiter = createRateLimiter({ interval: 1000 });
+const rateLimiter = createRateLimiter({ interval: 3000 });
 
 /**
  * @typedef {[]} Username
