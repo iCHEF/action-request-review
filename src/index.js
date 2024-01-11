@@ -9,13 +9,11 @@ const github = require('@actions/github');
 
 const createRateLimiter = ({ interval = 1000 }) => {
   const queue = [];
-  let counter = 0;
   let running = false;
 
   const rateLimiter = {
     run: async fn => new Promise((resolve, reject) => {
       queue.push({ fn, resolve, reject });
-      counter += 1;
       if (!running) {
         const handle = setInterval(
           () => {
@@ -26,8 +24,7 @@ const createRateLimiter = ({ interval = 1000 }) => {
                 .then(task.resolve)
                 .catch(task.reject)
                 .finally(() => {
-                  counter -= 1;
-                  if (counter === 0) {
+                  if (queue.length === 0) {
                     clearInterval(handle);
                     running = false;
                   }
