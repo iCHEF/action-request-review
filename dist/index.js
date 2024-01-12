@@ -53800,25 +53800,25 @@ const octokit = (function getOctokit() {
   const octokitOptions = getOctokitOptions(token, {
     throttle: {
       onRateLimit: (retryAfter, options, octokit, retryCount) => {
-        octokit.log.warn(
+        core.info(
           `Request quota exhausted for request ${options.method} ${options.url}`,
         );
   
         if (retryCount < 1) {
           // only retries once
-          octokit.log.info(`Retrying after ${retryAfter} seconds!`);
+          core.info(`Retrying after ${retryAfter} seconds!`);
           return true;
         }
       },
       onSecondaryRateLimit: (retryAfter, options, octokit) => {
         // does not retry, only logs a warning
-        octokit.log.warn(
+        core.info(
           `SecondaryRateLimit detected for request ${options.method} ${options.url}`,
         );
 
         if (retryCount < 1) {
           // only retries once
-          octokit.log.info(`Retrying after ${retryAfter} seconds!`);
+          core.info(`Retrying after ${retryAfter} seconds!`);
           return true;
         }
       },
