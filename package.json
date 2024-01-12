@@ -6,6 +6,9 @@
   "author": "iCHEF FE team <feteam@ichef.com.tw>",
   "license": "UNLICENSED",
   "private": true,
+  "engines": {
+    "node": ">=20.11"
+  },
   "scripts": {
     "build": "ncc build src/index.js --license LICENSES.txt",
     "clean:build": "rm -rf ./dist"
@@ -18,6 +21,6 @@
     "yaml": "^1.10.2"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.28.5"
+    "@vercel/ncc": "^0.38.1"
   }
 }

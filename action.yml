@@ -12,5 +12,5 @@ inputs:
     required: true
     description: Gist id to config.yml
 runs:
-  using: node12
+  using: node20
   main: dist/index.js
