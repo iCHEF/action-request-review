@@ -6,43 +6,8 @@ const dateFns = require('date-fns');
 
 const core = require('@actions/core');
 const github = require('@actions/github');
-
-const createRateLimiter = ({ interval = 1000 }) => {
-  const queue = [];
-  let counter = 0;
-  let running = false;
-
-  const rateLimiter = {
-    run: async fn => new Promise((resolve, reject) => {
-      queue.push({ fn, resolve, reject });
-      if (!running) {
-        const handle = setInterval(
-          () => {
-            if (queue.length > 0) {
-              const task = queue.shift();
-              running = true;
-              task.fn()
-                .then(task.resolve)
-                .catch(task.reject)
-                .finally(() => {
-                  if (queue.length === 0) {
-                    clearInterval(handle);
-                    running = false;
-                  }
-                });
-            }
-          },
-          interval
-        );
-        running = true;
-      }
-    }),
-  };
-
-  return rateLimiter;
-};
-
-const rateLimiter = createRateLimiter({ interval: 5000 });
+const { GitHub, getOctokitOptions } = require('@actions/github/lib/utils');
+const { throttling } = require("@octokit/plugin-throttling");
 
 /**
  * @typedef {[]} Username
@@ -56,7 +21,35 @@ const rateLimiter = createRateLimiter({ interval: 5000 });
 
 const octokit = (function getOctokit() {
   const token = core.getInput('token');
-  return github.getOctokit(token);
+  const Octokit = GitHub.plugin(throttling);
+  const octokitOptions = getOctokitOptions(token, {
+    throttle: {
+      onRateLimit: (retryAfter, options, octokit, retryCount) => {
+        octokit.log.warn(
+          `Request quota exhausted for request ${options.method} ${options.url}`,
+        );
+  
+        if (retryCount < 1) {
+          // only retries once
+          octokit.log.info(`Retrying after ${retryAfter} seconds!`);
+          return true;
+        }
+      },
+      onSecondaryRateLimit: (retryAfter, options, octokit) => {
+        // does not retry, only logs a warning
+        octokit.log.warn(
+          `SecondaryRateLimit detected for request ${options.method} ${options.url}`,
+        );
+
+        if (retryCount < 1) {
+          // only retries once
+          octokit.log.info(`Retrying after ${retryAfter} seconds!`);
+          return true;
+        }
+      },
+    },
+  });
+  return new Octokit(octokitOptions)
 })();
 
 async function fetchAndParseReviewers() {
@@ -87,14 +80,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPulls },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username}`,
-  }));
+  });
   const {
     data: { total_count: countOfReviewdPulls },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
-  }));
+  });
 
   const totalCountOfPulls = countOfRequestedPulls + countOfReviewdPulls;
 
@@ -109,14 +102,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPullsFromMentee },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
-  }));
+  });
   const {
     data: { total_count: countOfReviewdPullsFromMentee },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
-  }));
+  });
 
   return totalCountOfPulls
     - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
