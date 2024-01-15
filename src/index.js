@@ -63,7 +63,7 @@ async function fetchAndParseReviewers() {
 
   core.info(`Fetching config file from gist ID: ${gistId}`);
 
-  const { data } = await octokit.gists.get({ gist_id: gistId });
+  const { data } = await rateLimiter.run(() => octokit.gists.get({ gist_id: gistId }));
   const firstFileName = Object.keys(data.files)[0];
   const firstFile = data.files[firstFileName];
 
@@ -208,12 +208,12 @@ async function run() {
     const targetCount = core.getInput('count');
     const author = context.payload.pull_request.user.login;
 
-    const reviewedUsers = await octokit.pulls.listReviews(pullRequest)
+    const reviewedUsers = await rateLimiter.run(() => octokit.pulls.listReviews(pullRequest))
       .then(result => result.data.map(review => review.user.login))
       .then(_.uniq)
       .then(usernames => _.without(usernames, author));
 
-    const requestedUsers = await octokit.pulls.listRequestedReviewers(pullRequest)
+    const requestedUsers = await rateLimiter.run(() => octokit.pulls.listRequestedReviewers(pullRequest))
       .then(result => result.data.users.map(user => user.login));
 
     const alreadyInvolvedUsers = [...reviewedUsers, ...requestedUsers];
@@ -231,10 +231,10 @@ async function run() {
 
     core.info(`Requested reviewers: ${reviewers}`);
 
-    await octokit.pulls.requestReviewers({
+    await rateLimiter.run(() => octokit.pulls.requestReviewers({
       ...pullRequest,
       reviewers,
-    });
+    }));
   } catch (error) {
     core.setFailed(error.message);
   }
