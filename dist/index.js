@@ -56002,7 +56002,7 @@ const createRateLimiter = ({ interval = 1000 }) => {
   return rateLimiter;
 };
 
-const rateLimiter = createRateLimiter({ interval: 5000 });
+const rateLimiter = createRateLimiter({ interval: 0 });
 
 /**
  * @typedef {[]} Username
@@ -56058,14 +56058,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPulls },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username}`,
-  }));
+  });
   const {
     data: { total_count: countOfReviewdPulls },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} -author:${username}`,
-  }));
+  });
 
   const totalCountOfPulls = countOfRequestedPulls + countOfReviewdPulls;
 
@@ -56080,14 +56080,14 @@ async function getReviewLoadingOfUser(username, menteesList = []) {
 
   const {
     data: { total_count: countOfRequestedPullsFromMentee },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} review-requested:${username} ${queryStringForMentee}`,
-  }));
+  });
   const {
     data: { total_count: countOfReviewdPullsFromMentee },
-  } = await rateLimiter.run(() => octokit.search.issuesAndPullRequests({
+  } = await octokit.search.issuesAndPullRequests({
     q: `${baseCriteria} reviewed-by:${username} ${queryStringForMentee}`,
-  }));
+  });
 
   return totalCountOfPulls
     - (countOfRequestedPullsFromMentee * MENTEE_PULL_WEIGHT_RATIO)
