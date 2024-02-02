@@ -15,6 +15,7 @@
     "@actions/github": "^4.0.0",
     "date-fns": "^2.23.0",
     "lodash": "^4.17.21",
+    "node-fetch": "2",
     "yaml": "^1.10.2"
   },
   "devDependencies": {

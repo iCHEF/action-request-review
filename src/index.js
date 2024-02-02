@@ -1,4 +1,5 @@
 const _ = require('lodash');
+const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
@@ -58,12 +59,23 @@ const octokit = (function getOctokit() {
   return github.getOctokit(token);
 })();
 
+async function getGist(gistId) {
+  // Use Fetch API, not Octokit, to get gist content. Despite gist's public accessibility, Octokit checks if the token's owner owns the secret gist.i
+  try {
+    const response = await fetch(`https://api.github.com/gists/${gistId}`);
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    core.error(`Failed to fetch config file from gist: ${err}`);
+  }
+}
+
 async function fetchAndParseReviewers() {
   const gistId = core.getInput('config_gist_id');
 
   core.info(`Fetching config file from gist ID: ${gistId}`);
 
-  const { data } = await octokit.gists.get({ gist_id: gistId });
+  const data = await getGist(gistId);
   const firstFileName = Object.keys(data.files)[0];
   const firstFile = data.files[firstFileName];
 
